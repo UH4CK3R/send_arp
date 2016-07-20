@@ -80,7 +80,7 @@ void send_arp(int spoof) {
           libnet_destroy(l);
           exit(-1);
         }
-        if(libnet_autobuild_ethernet(s_haddr, ETHERTYPE_ARP, l) == -1){
+        if(libnet_autobuild_ethernet(r_haddr, ETHERTYPE_ARP, l) == -1){
           libnet_destroy(l);
           exit(-1);
         }
