@@ -205,8 +205,6 @@ int main(int argc, char *argv[])
    
     get_info();
 
-//    send_arp(0); //Send ARP Packet(To get Recever's MAC)
-
     pthread_create(&thread_t[0], NULL, send_arp, (void *)&c_spoof);
     scan_arp();
     pthread_join(thread_t[0], (void **)NULL);
